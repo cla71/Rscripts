@@ -1,0 +1,321 @@
+---
+title: "DOX-AD Analysis"
+author: "Christian Andersen"
+date: "April 20, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.path = "/winTank/DOXAD/DOXADR/doxadimages/")
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(DT)
+library(FSA)
+library(car)
+library(onewaytests)
+library(ggrepel)
+library(plotly)
+library(lme4)
+library(nparcomp)
+library(MCPAN)
+library(ez)
+```
+
+```{r}
+wd <- read.csv("/winTank/DOXAD/DOXADR/DOX-AD Weights.csv")
+wd$design <- factor(wd$design, levels = c("SAA1","SAA2","SBA1","SBA2"))
+
+
+wdsum<- wd %>%
+  group_by(design,treatment)%>%
+  summarise(n=n())
+write.csv(wdsum, "/winTank/DOXAD/DOXADR/doxadsums.csv")
+```
+
+```{r}
+s1 <- c("SAA1")
+pd <- c("PBS (DMSO Vehicle)","DOX-2","DOX-10")
+wd <- wd%>%
+  filter(design%in%s1)%>%
+  filter(treatment%in%pd)
+wd$treatment <- factor(wd$treatment,
+                       levels = c("PBS (DMSO Vehicle)","DOX-2","DOX-10"))
+wd$treatment <- relevel(wd$treatment, "PBS (DMSO Vehicle)")
+
+wd <- wd%>%
+  mutate(Week1=(((PND30-PND23)/PND23)*100))
+wd <- wd%>%
+  mutate(Week2=(((PND37-PND30)/PND30)*100))
+wd <- wd%>%
+  mutate(Initial=PND23*0)
+wd <- wd%>%
+  mutate(Week3=(((PND44-PND37)/PND37)*100))
+wd <- wd%>%
+  mutate(Week6=(((PND64-PND44)/PND44)*100))
+# wd$Age <- (as.Date(as.character(wd$Blue.Dye),format = "%m/%d/%Y")-as.Date(as.character(wd$DOB),format = "%m/%d/%Y"))/7
+
+
+
+wdl <- gather(wd,'Initial','PND23','PND30','PND37','PND44','PND64',key = "WeightTimepoint",value = "Weight")
+
+
+perchange <- gather(wd,'Initial','Week1','Week2','Week3','Week6', key = "WeightTimepoint",value = "PWC")
+perchange <- perchange[,c(1,2,3,9,10)]
+perchange <- perchange%>%
+  mutate(lPWC=log10(PWC))
+aPWC <- perchange%>%
+  filter(WeightTimepoint!="Initial")%>%
+  filter(PWC!="NA")
+colnames(perchange)
+```
+
+
+
+
+
+```{r}
+ggline(perchange, x="WeightTimepoint", y="PWC",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","dotplot"), short.panel.labs = F)%>%ggpar(xlab = "Timepoint",ylab = "Percent Weight Change")
+wplot <-ggline(perchange, x="WeightTimepoint",y="PWC", color = "treatment",
+       add=c("mean_sd","jitter"),
+       palette = c("blue","magenta","red","cyan","green","grey"),size=1.5, position = position_dodge(.5),add.params = list(size=4.0,alpha=0.2))+border("black")+font("xy.text",size =35,face="bold")+rremove("xylab")+ rotate_x_text(45)+ theme(plot.margin = margin(0.1,0.1,0.1,0.1, "cm")) 
+ggpar(wplot,legend = "none")
+```
+
+```{r}
+perchange%>%
+  dplyr::group_by(WeightTimepoint,treatment)%>%
+  summarise(n=n(),mean=mean(PWC,na.rm=TRUE),sd=sd(PWC,na.rm=TRUE),median=median(PWC,na.rm=TRUE))
+wdl%>%
+  dplyr::group_by(WeightTimepoint,treatment)%>%
+  summarise(n=n(),mean=mean(Weight,na.rm=TRUE),sd=sd(Weight,na.rm=TRUE),median=median(Weight,na.rm=TRUE))
+```
+
+```{r}
+ggboxplot(perchange,"WeightTimepoint","PWC", color = "treatment",palette = c("blue","magenta","red","cyan","green","grey"))
+```
+
+
+```{r}
+ggline(wdl, x="WeightTimepoint", y="Weight",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","jitter"), short.panel.labs = F,size=1.5, position = position_dodge(.5),add.params = list(size=4.0,alpha=.2))%>%ggpar(xlab = "Timepoint",ylab = "Weight", ylim = c(0,25))+border("black")+font("xy.text",size = 35, face="bold")+font("x.text",angle=45,vjust=.6)
+```
+
+```{r}
+basemodel <- lmerTest::lmer(PWC~WeightTimepoint*treatment+(1 | sample), REML = T, data = aPWC)
+summary(basemodel)
+Anova(basemodel)
+```
+
+```{r}
+basemodel <- lmerTest::lmer(Weight~treatment*WeightTimepoint+(1|sample), REML = T, data = wdl)
+summary(basemodel)
+Anova(basemodel)
+```
+
+
+
+```{r}
+wdl <- wd%>%
+  mutate(Week1=(((PND30-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Week2=(((PND37-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Initial=PND23*0)
+wdl <- wd%>%
+  mutate(Week3=(((PND44-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Week6=(((PND64-PND23)/PND23)*100))
+PWC1 <- gather(wdl,'Initial','Week1','Week2','Week3','Week6', key = "WeightTimepoint",value = "PWC")
+ggline(PWC1, x="WeightTimepoint", y="PWC",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","dotplot"), short.panel.labs = F)%>%ggpar(xlab = "Timepoint",ylab = "Percent Weight Change")
+```
+```{r}
+wd <- read.csv("/winTank/DOXAD/DOXADR/DOX-AD Weights.csv")
+wd$design <- factor(wd$design, levels = c("SAA1","SAA2","SBA1","SBA2"))
+s1 <- c("SBA1")
+pd <- c("PBS (DMSO Vehicle)","DOX-2","DOX-10")
+wd <- wd%>%
+  filter(design%in%s1)%>%
+  filter(treatment%in%pd)
+wd$treatment <- factor(wd$treatment,
+                       levels = c("PBS (DMSO Vehicle)","DOX-2","DOX-10"))
+wd$treatment <- relevel(wd$treatment, "PBS (DMSO Vehicle)")
+wd <- wd%>%
+  mutate(Week1=(((PND30-PND23)/PND23)*100))
+wd <- wd%>%
+  mutate(Week2=(((PND37-PND30)/PND30)*100))
+wd <- wd%>%
+  mutate(Initial=PND23*0)
+wd <- wd%>%
+  mutate(Week3=(((PND44-PND37)/PND37)*100))
+wd <- wd%>%
+  mutate(Week6=(((PND64-PND44)/PND44)*100))
+# wd$Age <- (as.Date(as.character(wd$Blue.Dye),format = "%m/%d/%Y")-as.Date(as.character(wd$DOB),format = "%m/%d/%Y"))/7
+
+
+
+wdl <- gather(wd,'Initial','PND23','PND30','PND37','PND44','PND64',key = "WeightTimepoint",value = "Weight")
+
+perchange <- gather(wd,'Initial','Week1','Week2','Week3','Week6', key = "WeightTimepoint",value = "PWC")
+perchange <- perchange[,c(1,2,3,9,10)]
+perchange <- perchange%>%
+  mutate(lPWC=log10(PWC))
+aPWC <- perchange%>%
+  filter(WeightTimepoint!="Initial")
+colnames(perchange)
+```
+
+
+
+
+```{r}
+ggline(perchange, x="WeightTimepoint", y="PWC",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","dotplot"), short.panel.labs = F)%>%ggpar(xlab = "Timepoint",ylab = "Percent Weight Change")
+wplot <-ggline(perchange, x="WeightTimepoint",y="PWC", color = "treatment",
+       add=c("mean_sd","jitter"),
+       palette = c("blue","magenta","red","cyan","green","grey"), size=1.5, position = position_dodge(.5),add.params = list(size=4.0,alpha=0.2))+border("black")+font("xy.text",size =35,face="bold")+rremove("xylab")+ rotate_x_text(45)
+ggpar(wplot,legend = "none")
+```
+
+```{r}
+perchange%>%
+  dplyr::group_by(WeightTimepoint,treatment)%>%
+  summarise(n=n(),mean=mean(PWC,na.rm=TRUE),sd=sd(PWC,na.rm=TRUE),median=median(PWC,na.rm=TRUE))
+wdl%>%
+  dplyr::group_by(WeightTimepoint,treatment)%>%
+  summarise(n=n(),mean=mean(Weight,na.rm=TRUE),sd=sd(Weight,na.rm=TRUE),median=median(Weight,na.rm=TRUE))
+```
+
+```{r}
+ggboxplot(perchange,"WeightTimepoint","PWC", color = "treatment",palette = c("blue","magenta","red","cyan","green","grey"))
+```
+
+
+```{r}
+ggline(wdl, x="WeightTimepoint", y="Weight",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","jitter"), short.panel.labs = F,
+          size=1.5, position = position_dodge(.5),
+          add.params = list(size=4.0,alpha=0.2))%>%ggpar(xlab = "Timepoint",ylab = "Weight", ylim = c(0,25))+border("black")+font("xy.text",size = 35, face="bold")+font("x.text",angle=45,vjust=.6)
+```
+
+```{r}
+basemodel <- lmerTest::lmer(PWC~treatment*WeightTimepoint+(1|sample), REML = T, data = aPWC)
+summary(basemodel)
+Anova(basemodel)
+```
+
+```{r}
+basemodel <- lmerTest::lmer(Weight~treatment*WeightTimepoint+(1|sample), REML = T, data = wdl)
+summary(basemodel)
+Anova(basemodel)
+```
+
+
+
+
+
+```{r}
+aPWC<- aPWC%>%
+  unite(treatment,WeightTimepoint,col="twt",sep="")
+aPWC$twt <- factor(aPWC$twt)
+aPWC$twt <- relevel(aPWC$twt, "PBS (DMSO Vehicle)Week1")
+```
+
+```{r}
+basemodel <- lmerTest::lmer(PWC~twt+(1|sample), REML = T, data = aPWC)
+summary(basemodel)
+Anova(basemodel)
+```
+
+
+
+```{r}
+wdl <- wd%>%
+  mutate(Week1=(((PND30-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Week2=(((PND37-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Initial=PND23*0)
+wdl <- wd%>%
+  mutate(Week3=(((PND44-PND23)/PND23)*100))
+wdl <- wd%>%
+  mutate(Week6=(((PND64-PND23)/PND23)*100))
+PWC1 <- gather(wdl,'Initial','Week1','Week2','Week3','Week6', key = "WeightTimepoint",value = "PWC")
+ggline(PWC1, x="WeightTimepoint", y="PWC",
+          color = "treatment",
+          palette = c("blue","magenta","red","cyan","green","grey"),
+          notch=F,
+          add = c("mean_sd","dotplot"), short.panel.labs = F)%>%ggpar(xlab = "Timepoint",ylab = "Percent Weight Change")
+
+
+
+```
+
+```{r}
+treatment <- c("PBS","DOX2","DOX10","CIS","CYCLOP")
+sigbd <- c(8,5,3,3,4)
+littlebd <- c(3,3,4,1,2)
+nobd <- c(0,0,3,2,1)
+ad <- data.frame(treatment,sigbd,littlebd,nobd)
+
+# adl <- gather(ad,'sigbd','littlebd','nobd',key = "BDStatus",value = "count")
+# 
+# ezANOVA(data=adl,
+#         count,
+#         BDStatus,
+#         between = treatment, 
+#         type = 3)
+```
+
+```{r}
+
+
+adm <- matrix(c(8,5,4,0,4,4),nrow=3, dimnames = list(treatment=c("PBS","DOX2","DOX10"),bd=c("BD reaction","NO BD")))
+
+
+
+test <-fisher.test(adm,simulate.p.value = T)
+test
+ctest <- chisq.test(adm)
+ctest
+round(ctest$residuals,3)
+library(corrplot)
+corrplot(ctest$residuals, is.cor=F)
+contrib <- 100*ctest$residuals^2/ctest$statistic
+round(contrib,3)
+corrplot(contrib,is.corr = F)
+```
+```{r}
+library(vcd)
+assoc(adm,shade=T,las=3)
+
+
+
+```
+
+```{r}
+p4treat <- matrix(c(6,0,5,9),nrow = 2, dimnames = list(treat = c("DOX","PBS"),p4= c("High E2","Average")))
+test<- fisher.test(p4treat)
+test
+```
+
+
